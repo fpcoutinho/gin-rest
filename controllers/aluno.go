@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/fpcoutinho/gin-rest/configs"
@@ -42,6 +41,10 @@ func CriaAluno(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := models.ValidaDadosDeAluno(&aluno); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 	configs.DB.Collection("alunos").InsertOne(ctx, aluno)
 }
 
@@ -50,11 +53,7 @@ func FindAluno(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	var aluno models.Aluno
 	defer cancel()
-	m := c.Param("matricula")
-	matricula, err := strconv.Atoi(m)
-	if err != nil {
-		panic(err)
-	}
+	matricula := c.Param("matricula")
 
 	if err := alunoCollection.FindOne(ctx, bson.M{"matricula": matricula}).Decode(&aluno); err != nil {
 		if err.Error() == "mongo: no documents in result" {
@@ -74,11 +73,7 @@ func DeleteAluno(c *gin.Context) {
 	var aluno models.Aluno
 	defer cancel()
 
-	m := c.Param("matricula")
-	matricula, err := strconv.Atoi(m)
-	if err != nil {
-		panic(err)
-	}
+	matricula := c.Param("matricula")
 
 	if err := alunoCollection.FindOneAndDelete(ctx, bson.M{"matricula": matricula}).Decode(&aluno); err != nil {
 		if err.Error() == "mongo: no documents in result" {
@@ -89,7 +84,7 @@ func DeleteAluno(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Aluno '" + aluno.Nome + "' de matrícula '" + m + "' deletado com sucesso."})
+	c.JSON(http.StatusOK, gin.H{"message": "Aluno '" + aluno.Nome + "' de matrícula '" + matricula + "' deletado com sucesso."})
 }
 
 func UpdateAluno(c *gin.Context) {
@@ -97,20 +92,24 @@ func UpdateAluno(c *gin.Context) {
 	var aluno models.Aluno
 	defer cancel()
 
-	m := c.Param("matricula")
-	matricula, err := strconv.Atoi(m)
-	if err != nil {
-		panic(err)
-	}
+	matricula := c.Param("matricula")
 
 	if err := c.ShouldBindJSON(&aluno); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	a := aluno
+	a.Matricula = matricula
+	if err := models.ValidaDadosDeAluno(&a); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	result := aluno
 	configs.DB.Collection("alunos").FindOneAndUpdate(ctx, bson.M{"matricula": matricula}, bson.M{"$set": bson.M{"nome": aluno.Nome, "curso": aluno.Curso, "idade": aluno.Idade}}, options.FindOneAndUpdate().SetReturnDocument(1)).Decode(&result)
 
-	if result.Matricula == 0 {
+	if result.Matricula == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Aluno não encontrado."})
 		return
 	}
